@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Circular Text Generator</title>
+  <style>
+    body { margin: 0; padding: 12px; font-family: sans-serif; }
+    label { display: block; margin-bottom: 5px; }
+    #textInput {
+      width: 90%;
+      padding: 6px;
+      font-size: 14px;
+      margin-bottom: 10px;
+      min-height: 40px; /* 初始最小高度 */
+      resize: none; /* 禁止手动调整 */
+      overflow-y: hidden; /* 隐藏滚动条 */
+      box-sizing: border-box; /* 确保 padding 不影响计算 */
+    }
+    #letterSpacingInput { width: 70%; padding: 6px; font-size: 14px; margin-bottom: 10px; }
+    #generateBtn { padding: 6px 12px; }
+  </style>
+</head>
+<body>
+  <label for="textInput">文案内容:</label>
+  <textarea id="textInput" placeholder="在此输入文案"></textarea>
+  
+  <label for="letterSpacingInput">字间距 (px):</label>
+  <input id="letterSpacingInput" type="number" value="5" min="0" max="100" />
+  
+  <button id="generateBtn">生成</button>
+
+  <script>
+    const textInput = document.getElementById('textInput');
+    const letterSpacingInput = document.getElementById('letterSpacingInput');
+    const generateBtn = document.getElementById('generateBtn');
+    const spacingLabel = document.querySelector('label[for="letterSpacingInput"]');
+
+    // --- HTML Table to Markdown Converter ---
+    function htmlTableToMarkdown(htmlString) {
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlString, 'text/html');
+        const table = doc.querySelector('table');
+        if (!table) return null; // Not a table
+
+        let markdown = '';
+        const rows = Array.from(table.querySelectorAll('tr'));
+        if (rows.length === 0) return null;
+
+        let colCount = 0;
+
+        // Process header (first row typically contains th)
+        const headerCells = Array.from(rows[0].querySelectorAll('th, td'));
+        colCount = headerCells.length;
+        markdown += '| ' + headerCells.map(cell => cell.textContent.trim()).join(' | ') + ' |\n';
+        
+        // Create separator
+        markdown += '| ' + Array(colCount).fill('---').join(' | ') + ' |\n';
+
+        // Process body rows (starting from index 1 if header existed)
+        const bodyRows = headerCells[0]?.tagName === 'TH' ? rows.slice(1) : rows; 
+        bodyRows.forEach(row => {
+          const cells = Array.from(row.querySelectorAll('td'));
+          // Ensure row has the correct number of cells, padding if necessary
+          const cellContents = Array.from({ length: colCount }, (_, i) => 
+            cells[i] ? cells[i].textContent.trim() : ''
+          );
+          markdown += '| ' + cellContents.join(' | ') + ' |\n';
+        });
+
+        return markdown.trim(); // Remove trailing newline
+      } catch (e) {
+        console.error("Error converting HTML table to Markdown:", e);
+        return null;
+      }
+    }
+    // --- End Converter ---
+
+    function resizeUI() {
+      // 1. 重置高度以获取自然滚动高度
+      textInput.style.height = 'auto';
+      // 2. 设置高度为滚动高度
+      textInput.style.height = textInput.scrollHeight + 'px';
+
+      // 3. 计算整体UI所需高度 (文本框 + 间距标签 + 间距输入框 + 按钮 + 上下边距)
+      // 这些值是估算的，可能需要微调
+      const spacingLabelHeight = spacingLabel.offsetHeight + 5; // 标签高度 + margin
+      const spacingInputHeight = letterSpacingInput.offsetHeight + 10; // 输入框高度 + margin
+      const buttonHeight = generateBtn.offsetHeight;
+      const topBottomPadding = 24; // body的padding * 2
+      const totalHeight = textInput.scrollHeight + spacingLabelHeight + spacingInputHeight + buttonHeight + topBottomPadding;
+      
+      // 4. 发送消息调整Figma窗口大小
+      parent.postMessage({ pluginMessage: { type: 'resize', height: totalHeight } }, '*');
+    }
+
+    // --- Paste Event Listener ---
+    textInput.addEventListener('paste', (event) => {
+      event.preventDefault(); // 阻止默认粘贴行为
+      const clipboardData = event.clipboardData || window.clipboardData;
+      let pastedData = '';
+
+      // 优先尝试获取 HTML 内容
+      if (clipboardData.types.includes('text/html')) {
+        const htmlContent = clipboardData.getData('text/html');
+        const markdownTable = htmlTableToMarkdown(htmlContent);
+        if (markdownTable) {
+          pastedData = markdownTable;
+        } else {
+          // 如果 HTML 不是表格，则回退到纯文本
+          pastedData = clipboardData.getData('text/plain');
+        }
+      } else {
+        // 如果没有 HTML，直接获取纯文本
+        pastedData = clipboardData.getData('text/plain');
+      }
+
+      // 在光标位置插入处理后的文本
+      const start = textInput.selectionStart;
+      const end = textInput.selectionEnd;
+      const text = textInput.value;
+      textInput.value = text.substring(0, start) + pastedData + text.substring(end);
+      // 更新光标位置
+      textInput.selectionStart = textInput.selectionEnd = start + pastedData.length;
+
+      // 手动触发 input 事件以调整大小
+      textInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    // --- End Paste Listener ---
+
+    // 监听输入事件
+    textInput.addEventListener('input', resizeUI);
+
+    // 页面加载时调整一次
+    window.addEventListener('load', resizeUI);
+
+    generateBtn.onclick = () => {
+      parent.postMessage(
+        { 
+          pluginMessage: { 
+            type: 'generate', 
+            text: textInput.value,
+            letterSpacing: parseInt(letterSpacingInput.value, 10) || 5
+          } 
+        },
+        '*'
+      );
+    };
+  </script>
+</body>
+</html>

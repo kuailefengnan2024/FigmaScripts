@@ -1,0 +1,14 @@
+{
+  "name": "飞书文档→Figma by 冬言Donyan^_^",
+  "id": "your-unique-id",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "menu": [
+    {
+      "name": "Convert Markdown to Table",
+      "command": "convert"
+    }
+  ]
+}

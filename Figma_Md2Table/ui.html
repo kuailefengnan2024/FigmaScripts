@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    textarea { width: 100%; height: 150px; margin-bottom: 10px; resize: none; }
+    button { padding: 5px 10px; background-color: #18A0FB; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px; }
+    button:hover { background-color: #0D8DE8; }
+    .section { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <div class="section">
+    <h3>表格转换</h3>
+    <textarea id="markdownInput" placeholder="在飞书文档复制表格在此粘贴 点击下方按钮生成figma表格"></textarea>
+    <button id="convertTableBtn">转为表格</button>
+  </div>
+  <div class="section">
+    <h3>纯文本块转换</h3>
+    <textarea id="cubeInput" placeholder="在飞书文档复制文本内容在此粘贴 点击下方按钮生成文本块layout"></textarea>
+    <button id="convertCubeBtn">转为文本块</button>
+  </div>
+
+  <script>
+    console.log('UI script loaded');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('DOM fully loaded');
+
+      // 表格转换 按钮
+      const tableButton = document.getElementById('convertTableBtn');
+      if (tableButton) {
+        console.log('Table button found');
+        tableButton.addEventListener('click', () => {
+          console.log('Table button clicked');
+          const markdown = document.getElementById('markdownInput').value;
+          console.log('Sending table markdown:', markdown);
+          parent.postMessage({ pluginMessage: { type: 'convert-to-table', markdown } }, '*');
+        });
+      }
+
+      // 纯文本块转换 按钮
+      const cubeButton = document.getElementById('convertCubeBtn');
+      if (cubeButton) {
+        console.log('Cube button found');
+        cubeButton.addEventListener('click', () => {
+          console.log('Cube button clicked');
+          const content = document.getElementById('cubeInput').value;
+          console.log('Sending cube markdown:', content);
+          parent.postMessage({ pluginMessage: { type: 'convert-to-cube', content } }, '*');
+        });
+      }
+
+      // 处理表格粘贴事件
+      document.getElementById('markdownInput').addEventListener('paste', (event) => {
+        event.preventDefault();
+        const clipboardData = event.clipboardData || window.clipboardData;
+        const text = clipboardData.getData('text/plain');
+        const html = clipboardData.getData('text/html');
+
+        let markdown = text;
+        if (html) {
+          markdown = convertHtmlTableToMarkdown(html);
+        }
+        document.getElementById('markdownInput').value = markdown;
+        console.log('Table converted to markdown:', markdown);
+      });
+
+      // 处理文本粘贴事件，将 HTML 转换为 Markdown
+      document.getElementById('cubeInput').addEventListener('paste', (event) => {
+        event.preventDefault();
+        const clipboardData = event.clipboardData || window.clipboardData;
+        const html = clipboardData.getData('text/html');
+        const text = clipboardData.getData('text/plain');
+
+        let markdown = text;
+        if (html) {
+          markdown = convertHtmlToMarkdown(html);
+        }
+        document.getElementById('cubeInput').value = markdown;
+        console.log('Cube converted to markdown:', markdown);
+      });
+
+      // 将 HTML 表格转换为 Markdown
+      function convertHtmlTableToMarkdown(html) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const table = doc.querySelector('table');
+        if (!table) return html;
+
+        const rows = Array.from(table.querySelectorAll('tr'));
+        let markdownRows = [];
+
+        rows.forEach((row, index) => {
+          const cells = Array.from(row.querySelectorAll('td, th')).map(cell => cell.textContent.trim());
+          if (cells.length === 0) return;
+          const markdownRow = '| ' + cells.join(' | ') + ' |';
+          markdownRows.push(markdownRow);
+
+          if (index === 0) {
+            const separator = '| ' + cells.map(() => '---').join(' | ') + ' |';
+            markdownRows.push(separator);
+          }
+        });
+
+        return markdownRows.join('\n');
+      }
+
+      // 将 HTML 转换为 Markdown（文本内容）
+      function convertHtmlToMarkdown(html) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        let markdownLines = [];
+
+        function processNode(node, level = 0) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.textContent.trim();
+            if (text) markdownLines.push(text);
+          } else if (node.nodeType === Node.ELEMENT_NODE) {
+            const tag = node.tagName.toLowerCase();
+            let text = node.textContent.trim();
+
+            if (tag === 'ol' || tag === 'ul') {
+              const items = node.querySelectorAll('li');
+              items.forEach((li, index) => {
+                const liText = li.textContent.trim();
+                if (!liText) return;
+
+                const strongText = li.querySelector('strong');
+                const formattedText = strongText ? `**${strongText.textContent.trim()}**${liText.replace(strongText.textContent, '').trim()}` : liText;
+
+                if (tag === 'ol') {
+                  markdownLines.push(`${index + 1}. ${formattedText}`);
+                } else {
+                  markdownLines.push(`- ${formattedText}`);
+                }
+              });
+            } else if (!node.childNodes.length || node.childNodes.length === 1) {
+              console.log('Processing element:', tag, text);
+              switch (tag) {
+                case 'h3':
+                  markdownLines.push(`# ${text}`);
+                  break;
+                case 'h4':
+                  markdownLines.push(`## ${text}`);
+                  break;
+                case 'strong':
+                  markdownLines.push(`**${text}**`);
+                  break;
+                case 'div':
+                case 'p':
+                  const strongText = node.querySelector('strong');
+                  if (strongText) {
+                    const boldText = strongText.textContent.trim();
+                    const remainingText = text.replace(boldText, '').trim();
+                    text = `**${boldText}**${remainingText ? ' ' + remainingText : ''}`;
+                  }
+                  markdownLines.push(text);
+                  break;
+                default:
+                  if (text) markdownLines.push(text);
+              }
+            } else {
+              node.childNodes.forEach(child => processNode(child, level + 1));
+            }
+          }
+        }
+
+        doc.body.childNodes.forEach(node => processNode(node));
+        return markdownLines.join('\n');
+      }
+    });
+  </script>
+</body>
+</html>
